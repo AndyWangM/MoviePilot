@@ -67,6 +67,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+            GITHUB_TOKEN=${{ secrets.SITES_TOKEN }}
           cache-from: type=gha,scope=${{ github.workflow }}-docker
           cache-to: type=gha,scope=${{ github.workflow }}-docker,mode=max
