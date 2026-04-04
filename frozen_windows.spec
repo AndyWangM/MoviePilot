@@ -89,7 +89,7 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=['rthook_stderr.py'],
+    runtime_hooks=[],
     excludes=[],
     noarchive=False,
 )
@@ -106,7 +106,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=True,    # 调试模式：显示控制台窗口以便查看错误
+    console=False,
     icon='app.ico',
 )
 

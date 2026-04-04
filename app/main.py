@@ -12,10 +12,16 @@ from uvicorn import Config
 from app.factory import app
 from app.utils.system import SystemUtils
 
-# 禁用输出
+# frozen 模式：把 stdout/stderr 重定向到日志文件，确保闪退也能看到错误
 if SystemUtils.is_frozen():
-    sys.stdout = open(os.devnull, 'w')
-    sys.stderr = open(os.devnull, 'w')
+    import pathlib
+    _log_dir = pathlib.Path(sys.executable).parent / "config" / "logs"
+    _log_dir.mkdir(parents=True, exist_ok=True)
+    _crash_log = _log_dir / "startup.log"
+    _f = open(_crash_log, "w", encoding="utf-8", buffering=1)
+    sys.stdout = _f
+    sys.stderr = _f
+    print(f"[startup] log -> {_crash_log}", flush=True)
 
 from app.core.config import settings
 from app.db.init import init_db, update_db
@@ -45,7 +51,7 @@ def start_tray():
         调用浏览器打开前端页面
         """
         import webbrowser
-        webbrowser.open(f"http://localhost:{settings.NGINX_PORT}")
+        webbrowser.open(f"http://localhost:{settings.PORT}")
 
     def quit_app():
         """

@@ -30,41 +30,6 @@ from app.schemas.types import SystemConfigKey
 from app.startup.agent_initializer import init_agent, stop_agent
 
 
-def start_frontend():
-    """
-    启动前端服务
-    """
-    # 仅Windows可执行文件支持内嵌nginx
-    if not SystemUtils.is_frozen() \
-            or not SystemUtils.is_windows():
-        return
-    # 临时Nginx目录
-    nginx_path = settings.ROOT_PATH / 'nginx'
-    if not nginx_path.exists():
-        return
-    # 配置目录下的Nginx目录
-    run_nginx_dir = settings.CONFIG_PATH.with_name('nginx')
-    if not run_nginx_dir.exists():
-        # 移动到配置目录
-        SystemUtils.move(nginx_path, run_nginx_dir)
-    # 启动Nginx
-    import subprocess
-    subprocess.Popen("start nginx.exe",
-                     cwd=run_nginx_dir,
-                     shell=True)
-
-
-def stop_frontend():
-    """
-    停止前端服务
-    """
-    if not SystemUtils.is_frozen() \
-            or not SystemUtils.is_windows():
-        return
-    import subprocess
-    subprocess.Popen(f"taskkill /f /im nginx.exe", shell=True)
-
-
 def clear_temp():
     """
     清理临时文件和图片缓存
@@ -128,8 +93,6 @@ async def stop_modules():
     await AsyncRedisHelper().close()
     # 停止数据库连接
     await close_database()
-    # 停止前端服务
-    stop_frontend()
     # 清理临时文件
     clear_temp()
 
@@ -156,7 +119,5 @@ def init_modules():
     SubscribeHelper()
     # 初始化AI智能体
     init_agent()
-    # 启动前端服务
-    start_frontend()
     # 检查认证状态
     check_auth()
