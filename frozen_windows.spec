@@ -106,7 +106,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=False,
+    console=True,    # 调试模式：显示控制台窗口以便查看错误
     icon='app.ico',
 )
 
