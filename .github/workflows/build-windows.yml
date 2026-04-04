@@ -34,7 +34,8 @@ jobs:
         shell: bash
         run: |
           pip install --upgrade pip
-          pip install pyinstaller pystray pillow
+          # 固定 PyInstaller 5.x，6.x 有 pefile DLL 扫描 bug
+          pip install "pyinstaller==5.13.2" pystray pillow
           pip install -r requirements.txt
 
       - name: Install Playwright browsers
