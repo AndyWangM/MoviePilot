@@ -1,0 +1,20 @@
+version: "3.8"
+
+services:
+  moviepilot:
+    image: w394090975/moviepilot:dev
+    container_name: moviepilot
+    restart: unless-stopped
+    ports:
+      - "3000:3000"   # 前端（Web UI）
+      - "3001:3001"   # 后端 API（可按需关闭）
+    volumes:
+      - ./config:/config          # 配置、数据库、日志
+      - /你的媒体库路径:/media     # 媒体文件目录（按实际路径修改）
+    environment:
+      - NGINX_PORT=3000           # 前端端口
+      - AUTH_SITE=iyuu            # 认证站点（iyuu / ptlgs 等）
+      # - IYUU_SIGN=xxxxxx        # iyuu token（有则填，用于解锁更多站点）
+      # - PROXY_HOST=http://127.0.0.1:7890  # 代理（需要翻墙时填）
+      # - GITHUB_PROXY=https://ghp.ci/      # GitHub 代理（国内加速）
+      # - TZ=Asia/Shanghai
