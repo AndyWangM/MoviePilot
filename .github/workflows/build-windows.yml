@@ -47,7 +47,6 @@ jobs:
         run: |
           curl -sL "https://github.com/AndyWangM/MoviePilot-Frontend/releases/download/${{ env.frontend_version }}/dist.zip" -o dist.zip
           unzip -q dist.zip -d frontend_tmp
-          # 前端直接放到 public/，打包后作为静态文件目录
           mv frontend_tmp/dist public
 
       - name: Download resources (sites.bin etc.)
@@ -64,12 +63,10 @@ jobs:
         env:
           SITES_TOKEN: ${{ secrets.SITES_TOKEN }}
         run: |
-          # 获取最新 release 信息（含 assets 下载 URL）
           RELEASE_JSON=$(curl -s "https://api.github.com/repos/AndyWangM/MoviePilot-Sites/releases/latest" \
             -H "Authorization: Bearer $SITES_TOKEN")
           SITES_VERSION=$(echo "$RELEASE_JSON" | python -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
           echo "sites_version=$SITES_VERSION"
-          # 从 assets 列表中找到 win_amd64.pyd 的 API 下载 URL（走 API 不走 S3 重定向）
           ASSET_URL=$(echo "$RELEASE_JSON" | python -c "
           import sys, json
           assets = json.load(sys.stdin)['assets']
@@ -78,22 +75,73 @@ jobs:
                   print(a['url'])
                   break
           ")
-          echo "asset_url=$ASSET_URL"
-          # 用 API URL + Accept: application/octet-stream 直接下载，不经过 S3 重定向
           curl -sL "$ASSET_URL" \
             -H "Authorization: Bearer $SITES_TOKEN" \
             -H "Accept: application/octet-stream" \
             -o app/helper/sites.cp312-win_amd64.pyd
-          # 验证文件大小
           SIZE=$(wc -c < app/helper/sites.cp312-win_amd64.pyd)
           echo "Downloaded sites.pyd size: $SIZE bytes"
           if [ "$SIZE" -lt 1000 ]; then
-            echo "ERROR: sites.pyd too small, download likely failed"
+            echo "ERROR: sites.pyd too small"
             cat app/helper/sites.cp312-win_amd64.pyd
             exit 1
           fi
 
-      - name: Build with PyInstaller (onedir)
+      - name: Generate splash screen
+        shell: python
+        run: |
+          from PIL import Image, ImageDraw, ImageFont
+          import os
+
+          W, H = 480, 420
+          img = Image.new("RGB", (W, H), color=(30, 30, 30))
+          draw = ImageDraw.Draw(img)
+
+          # 尝试加载系统字体，否则用默认
+          try:
+              font_title = ImageFont.truetype("C:/Windows/Fonts/msyh.ttc", 28)
+              font_sub   = ImageFont.truetype("C:/Windows/Fonts/msyh.ttc", 16)
+          except Exception:
+              font_title = ImageFont.load_default()
+              font_sub   = font_title
+
+          # 加载 logo（app.ico）
+          try:
+              ico = Image.open("app.ico").convert("RGBA").resize((80, 80))
+              img.paste(ico, ((W - 80) // 2, 60), ico)
+          except Exception:
+              pass
+
+          # 标题
+          draw.text((W // 2, 170), "MoviePilot", font=font_title, fill="white", anchor="mm")
+          draw.text((W // 2, 210), "NAS 媒体库自动化管理工具", font=font_sub, fill="#aaaaaa", anchor="mm")
+
+          # 分隔线
+          draw.line([(40, 240), (W - 40, 240)], fill="#444444", width=1)
+
+          # 进度提示区（splash text 会覆盖这里）
+          draw.text((W // 2, 390), "正在启动...", font=font_sub, fill="#888888", anchor="mm")
+
+          img.save("splash.png")
+          print("splash.png generated:", os.path.getsize("splash.png"), "bytes")
+
+      - name: Add frontend to spec datas
+        shell: bash
+        run: |
+          # 在 spec 的 datas 列表里追加 public/ 目录
+          # PyInstaller datas 格式: (src, dest_in_bundle)
+          python - <<'EOF'
+          content = open('frozen_windows.spec', encoding='utf-8').read()
+          inject = "        ('public', 'public'),\n"
+          content = content.replace(
+              "        ('app.ico', '.'),\n",
+              "        ('app.ico', '.'),\n" + inject
+          )
+          open('frozen_windows.spec', 'w', encoding='utf-8').write(content)
+          print("spec patched with public/ datas")
+          EOF
+
+      - name: Build with PyInstaller (onefile)
         shell: bash
         run: |
           pyinstaller frozen_windows.spec --distpath dist_win --workpath build_win
@@ -103,14 +151,13 @@ jobs:
         run: |
           PKG="MoviePilot-${{ env.app_version }}-windows"
           mkdir -p "$PKG"
-          # 主程序
-          cp -r dist_win/MoviePilot/* "$PKG/"
-          # 前端静态文件（FastAPI StaticFiles 从这里读取）
-          cp -r public "$PKG/public"
-          # 默认配置目录
+          # onefile: 只有一个 EXE
+          cp dist_win/MoviePilot.exe "$PKG/"
+          # config 默认目录（用户数据将存放于此）
           mkdir -p "$PKG/config"
           # 打包成 zip
           7z a "${PKG}.zip" "$PKG/"
+          echo "Package size: $(du -sh ${PKG}.zip | cut -f1)"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
