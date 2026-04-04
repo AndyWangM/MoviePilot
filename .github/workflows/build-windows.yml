@@ -47,6 +47,7 @@ jobs:
         run: |
           curl -sL "https://github.com/AndyWangM/MoviePilot-Frontend/releases/download/${{ env.frontend_version }}/dist.zip" -o dist.zip
           unzip -q dist.zip -d frontend_tmp
+          # 前端直接放到 public/，打包后作为静态文件目录
           mv frontend_tmp/dist public
 
       - name: Download resources (sites.bin etc.)
@@ -92,45 +93,6 @@ jobs:
             exit 1
           fi
 
-      - name: Download nginx for Windows
-        shell: bash
-        run: |
-          curl -sL "https://nginx.org/download/nginx-1.26.3.zip" -o nginx.zip
-          unzip -q nginx.zip
-          mv nginx-1.26.3 nginx
-          # 放入前端 dist
-          mkdir -p nginx/html
-          cp -r public/* nginx/html/
-          # 写入 nginx.conf（反代后端 3001）
-          cat > nginx/conf/nginx.conf << 'EOF'
-          worker_processes 1;
-          events { worker_connections 1024; }
-          http {
-              include mime.types;
-              default_type application/octet-stream;
-              sendfile on;
-              server {
-                  listen 3000;
-                  root html;
-                  index index.html;
-                  location /api {
-                      proxy_pass http://127.0.0.1:3001;
-                      proxy_set_header Host $host;
-                      proxy_set_header X-Real-IP $remote_addr;
-                  }
-                  location /ws {
-                      proxy_pass http://127.0.0.1:3001;
-                      proxy_http_version 1.1;
-                      proxy_set_header Upgrade $http_upgrade;
-                      proxy_set_header Connection "upgrade";
-                  }
-                  location / {
-                      try_files $uri $uri/ /index.html;
-                  }
-              }
-          }
-          EOF
-
       - name: Build with PyInstaller (onedir)
         shell: bash
         run: |
@@ -143,11 +105,9 @@ jobs:
           mkdir -p "$PKG"
           # 主程序
           cp -r dist_win/MoviePilot/* "$PKG/"
-          # nginx
-          cp -r nginx "$PKG/nginx"
-          # 前端（备用直接访问）
+          # 前端静态文件（FastAPI StaticFiles 从这里读取）
           cp -r public "$PKG/public"
-          # 默认配置
+          # 默认配置目录
           mkdir -p "$PKG/config"
           # 打包成 zip
           7z a "${PKG}.zip" "$PKG/"
