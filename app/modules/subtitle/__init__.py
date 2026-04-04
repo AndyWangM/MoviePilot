@@ -78,7 +78,7 @@ class SubtitleModule(_ModuleBase):
         # API请求方式的站点需要特殊处理
         if torrent.site is not None:
             site = SiteOper().get(torrent.site)
-            if indexer := SitesHelper().get_indexer(site.domain):
+            if site and (indexer := SitesHelper().get_indexer(site.domain)):
                 if indexer.get("parser") == "mTorrent":
                     return MTorrentSpider(indexer).get_subtitle_links(
                         torrent.page_url

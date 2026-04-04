@@ -55,18 +55,28 @@ async def add_site(
         return schemas.Response(success=False, message="用户未通过认证，无法使用站点功能！")
     domain = StringUtils.get_url_domain(site_in.url)
     site_info = await SitesHelper().async_get_indexer(domain)
-    if not site_info:
-        return schemas.Response(success=False, message="该站点不支持，请检查站点域名是否正确")
     if await Site.async_get_by_domain(db, domain):
         return schemas.Response(success=False, message=f"{domain} 站点己存在")
-    # 保存站点信息
-    site_in.domain = domain
     # 校正地址格式
     _scheme, _netloc = StringUtils.get_url_netloc(site_in.url)
     site_in.url = f"{_scheme}://{_netloc}/"
-    site_in.name = site_info.get("name")
+    site_in.domain = domain
     site_in.id = None
-    site_in.public = 1 if site_info.get("public") else 0
+    if site_info:
+        # 已知站点：用索引器信息补全
+        site_in.name = site_info.get("name") or site_in.name or domain
+        site_in.public = 1 if site_info.get("public") else 0
+    else:
+        # 未知站点：作为自定义私有站点添加，名称用用户填写的或域名
+        site_in.name = site_in.name or domain
+        site_in.public = 0
+        # 动态注册到索引器，使站点可被搜索模块识别
+        SitesHelper().add_indexer({
+            "id": domain,
+            "name": site_in.name,
+            "domain": site_in.url,
+            "public": False,
+        })
     site = Site(**site_in.model_dump())
     site.create(db)
     # 通知站点更新
