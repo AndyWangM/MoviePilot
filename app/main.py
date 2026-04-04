@@ -53,6 +53,15 @@ def start_tray():
         import webbrowser
         webbrowser.open(f"http://localhost:{settings.PORT}")
 
+    def open_log():
+        """
+        用系统默认程序打开启动日志
+        """
+        import pathlib
+        log_file = pathlib.Path(sys.executable).parent / "config" / "logs" / "startup.log"
+        if log_file.exists():
+            os.startfile(str(log_file))
+
     def quit_app():
         """
         退出程序
@@ -67,14 +76,10 @@ def start_tray():
         settings.PROJECT_NAME,
         icon=Image.open(settings.ROOT_PATH / 'app.ico'),
         menu=pystray.Menu(
-            pystray.MenuItem(
-                '打开',
-                open_web,
-            ),
-            pystray.MenuItem(
-                '退出',
-                quit_app,
-            )
+            pystray.MenuItem('打开', open_web),
+            pystray.MenuItem('查看日志', open_log),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem('退出', quit_app),
         )
     )
     # 启动托盘图标
