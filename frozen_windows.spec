@@ -63,6 +63,30 @@ hiddenimports = [
     'asyncpg',
     'sqlalchemy.dialects.postgresql',
     'sqlalchemy.dialects.postgresql.asyncpg',
+    'psycopg2',
+    # uvicorn 动态加载的组件
+    'uvicorn.logging',
+    'uvicorn.loops',
+    'uvicorn.loops.auto',
+    'uvicorn.loops.asyncio',
+    'uvicorn.protocols',
+    'uvicorn.protocols.http',
+    'uvicorn.protocols.http.auto',
+    'uvicorn.protocols.http.h11_impl',
+    'uvicorn.protocols.http.httptools_impl',
+    'uvicorn.protocols.websockets',
+    'uvicorn.protocols.websockets.auto',
+    'uvicorn.protocols.websockets.websockets_impl',
+    'uvicorn.lifespan',
+    'uvicorn.lifespan.on',
+    # fastapi / starlette StaticFiles
+    'starlette.staticfiles',
+    'starlette.templating',
+    'aiofiles',
+    # 其他常见动态导入
+    'multipart',
+    'email.mime.text',
+    'email.mime.multipart',
 ] + collect_local_submodules('app.modules') + collect_local_submodules('app.plugins')
 
 block_cipher = None
