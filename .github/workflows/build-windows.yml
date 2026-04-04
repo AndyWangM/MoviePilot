@@ -49,6 +49,15 @@ jobs:
           unzip -q dist.zip -d frontend_tmp
           mv frontend_tmp/dist public
 
+      - name: Download resources (sites.bin etc.)
+        shell: bash
+        run: |
+          curl -sL "https://github.com/jxxghp/MoviePilot-Resources/archive/refs/heads/main.zip" -o resources.zip
+          unzip -q resources.zip
+          cp -f MoviePilot-Resources-main/resources.v2/* app/helper/
+          echo "resources 文件:"
+          ls -lh app/helper/*.bin 2>/dev/null || echo "无 .bin 文件"
+
       - name: Download sites.pyd
         shell: bash
         env:
