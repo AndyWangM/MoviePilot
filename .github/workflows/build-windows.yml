@@ -54,12 +54,34 @@ jobs:
         env:
           SITES_TOKEN: ${{ secrets.SITES_TOKEN }}
         run: |
-          SITES_VERSION=$(curl -s "https://api.github.com/repos/AndyWangM/MoviePilot-Sites/releases/latest" \
-            -H "Authorization: Bearer $SITES_TOKEN" | python -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
+          # 获取最新 release 信息（含 assets 下载 URL）
+          RELEASE_JSON=$(curl -s "https://api.github.com/repos/AndyWangM/MoviePilot-Sites/releases/latest" \
+            -H "Authorization: Bearer $SITES_TOKEN")
+          SITES_VERSION=$(echo "$RELEASE_JSON" | python -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
           echo "sites_version=$SITES_VERSION"
-          curl -sL "https://github.com/AndyWangM/MoviePilot-Sites/releases/download/${SITES_VERSION}/sites.cp312-win_amd64.pyd" \
+          # 从 assets 列表中找到 win_amd64.pyd 的 API 下载 URL（走 API 不走 S3 重定向）
+          ASSET_URL=$(echo "$RELEASE_JSON" | python -c "
+          import sys, json
+          assets = json.load(sys.stdin)['assets']
+          for a in assets:
+              if 'win_amd64.pyd' in a['name']:
+                  print(a['url'])
+                  break
+          ")
+          echo "asset_url=$ASSET_URL"
+          # 用 API URL + Accept: application/octet-stream 直接下载，不经过 S3 重定向
+          curl -sL "$ASSET_URL" \
             -H "Authorization: Bearer $SITES_TOKEN" \
+            -H "Accept: application/octet-stream" \
             -o app/helper/sites.cp312-win_amd64.pyd
+          # 验证文件大小
+          SIZE=$(wc -c < app/helper/sites.cp312-win_amd64.pyd)
+          echo "Downloaded sites.pyd size: $SIZE bytes"
+          if [ "$SIZE" -lt 1000 ]; then
+            echo "ERROR: sites.pyd too small, download likely failed"
+            cat app/helper/sites.cp312-win_amd64.pyd
+            exit 1
+          fi
 
       - name: Download nginx for Windows
         shell: bash
