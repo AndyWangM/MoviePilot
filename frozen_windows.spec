@@ -24,8 +24,8 @@ def collect_pkg_data(package: str, include_py_files: bool = False, subdir: str =
             extension = file.suffix
             if not include_py_files and (extension in PY_IGNORE_EXTENSIONS):
                 continue
-            # 跳过 .pyd，由 binaries 处理
-            if extension == '.pyd':
+            # 跳过 .pyd（由 binaries 处理）和 .so/.bin（非 Windows PE）
+            if extension in ('.pyd', '.so', '.bin'):
                 continue
             data_toc.append((str(file.relative_to(pkg_base)), str(file), 'DATA'))
     return data_toc
@@ -62,6 +62,11 @@ block_cipher = None
 helper_pyds = []
 for pyd in _glob.glob('app/helper/*.pyd'):
     helper_pyds.append((pyd, 'app/helper'))
+
+# .bin 文件作为 DATA（不能放入 binaries，不是 PE 格式）
+helper_bins = []
+for bin_file in _glob.glob('app/helper/*.bin'):
+    helper_bins.append((bin_file, 'app/helper'))
 
 a = Analysis(
     ['app/main.py'],
@@ -104,8 +109,8 @@ coll = COLLECT(
     collect_pkg_data('cn2an'),
     collect_pkg_data('Pinyin2Hanzi'),
     collect_pkg_data('database', include_py_files=True),
-    collect_pkg_data('app.helper'),   # .pyd 已从这里排除，由 binaries 处理
-    [('./app.ico', '.', 'DATA')],
+    collect_pkg_data('app.helper'),   # .pyd/.so/.bin 已排除，分别由 binaries/DATA 处理
+    [('./app.ico', '.', 'DATA')] + helper_bins,
     strip=False,
     upx=True,
     upx_exclude=[],
