@@ -30,7 +30,11 @@ def create_app() -> FastAPI:
     if SystemUtils.is_frozen() and SystemUtils.is_windows():
         import sys
         import pathlib
-        frontend_path = pathlib.Path(sys.executable).parent / "public"
+        # onefile: 解压到 _MEIPASS 临时目录；onedir: exe 同级目录
+        if hasattr(sys, '_MEIPASS'):
+            frontend_path = pathlib.Path(sys._MEIPASS) / "public"
+        else:
+            frontend_path = pathlib.Path(sys.executable).parent / "public"
         if frontend_path.exists():
             _app.mount("/", StaticFiles(directory=str(frontend_path), html=True), name="frontend")
 

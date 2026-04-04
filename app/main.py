@@ -1,5 +1,6 @@
 import multiprocessing
 import os
+import pathlib
 import setproctitle
 import signal
 import sys
@@ -14,7 +15,6 @@ from app.utils.system import SystemUtils
 
 # frozen 模式：把 stdout/stderr 重定向到日志文件，确保闪退也能看到错误
 if SystemUtils.is_frozen():
-    import pathlib
     _log_dir = pathlib.Path(sys.executable).parent / "config" / "logs"
     _log_dir.mkdir(parents=True, exist_ok=True)
     _crash_log = _log_dir / "startup.log"
@@ -35,43 +35,52 @@ Server = uvicorn.Server(Config(app, host=settings.HOST, port=settings.PORT,
                                timeout_graceful_shutdown=60))
 
 
+def splash_update(text: str):
+    """
+    更新 onefile splash 屏文字（仅 frozen + pyi_splash 可用时生效）
+    """
+    try:
+        import pyi_splash  # noqa - 仅 onefile 模式下存在
+        pyi_splash.update_text(text)
+    except Exception:
+        pass
+
+
+def splash_close():
+    """
+    关闭 splash 屏
+    """
+    try:
+        import pyi_splash  # noqa
+        pyi_splash.close()
+    except Exception:
+        pass
+
+
 def start_tray():
     """
     启动托盘图标
     """
-
     if not SystemUtils.is_frozen():
         return
-
     if not SystemUtils.is_windows():
         return
 
     def open_web():
-        """
-        调用浏览器打开前端页面
-        """
         import webbrowser
         webbrowser.open(f"http://localhost:{settings.PORT}")
 
     def open_log():
-        """
-        用系统默认程序打开启动日志
-        """
-        import pathlib
         log_file = pathlib.Path(sys.executable).parent / "config" / "logs" / "startup.log"
         if log_file.exists():
             os.startfile(str(log_file))
 
     def quit_app():
-        """
-        退出程序
-        """
         TrayIcon.stop()
         Server.should_exit = True
 
     import pystray
 
-    # 托盘图标
     TrayIcon = pystray.Icon(
         settings.PROJECT_NAME,
         icon=Image.open(settings.ROOT_PATH / 'app.ico'),
@@ -82,28 +91,30 @@ def start_tray():
             pystray.MenuItem('退出', quit_app),
         )
     )
-    # 启动托盘图标
     threading.Thread(target=TrayIcon.run, daemon=True).start()
 
 
 def signal_handler(signum, frame):
-    """
-    信号处理函数，用于优雅停止服务
-    """
     print(f"收到信号 {signum}，开始优雅停止服务...")
     Server.should_exit = True
 
 
 if __name__ == '__main__':
-    # 注册信号处理器
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
 
+    splash_update("正在初始化数据库...")
     # 启动托盘
     start_tray()
     # 初始化数据库
     init_db()
     # 更新数据库
     update_db()
+
+    splash_update("正在启动服务，请稍候...")
+    # splash 在 uvicorn 开始监听后关闭（通过 lifespan startup 事件）
+    # 这里先关掉，避免 uvicorn 阻塞时 splash 一直挂着
+    splash_close()
+
     # 启动API服务
     Server.run()

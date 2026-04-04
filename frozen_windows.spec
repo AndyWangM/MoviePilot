@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# Windows onedir 专用 spec
+# Windows onefile 专用 spec（含启动 Splash 屏）
 
 def collect_pkg_data(package: str, include_py_files: bool = False, subdir: str = None):
     from pathlib import Path
@@ -24,10 +24,8 @@ def collect_pkg_data(package: str, include_py_files: bool = False, subdir: str =
             extension = file.suffix
             if not include_py_files and (extension in PY_IGNORE_EXTENSIONS):
                 continue
-            # 跳过 .pyd（由 binaries 处理）和 .so/.bin（非 Windows PE）
             if extension in ('.pyd', '.so', '.bin'):
                 continue
-            # TOC 格式: (dest_name, src_path, typecode)
             data_toc.append((str(file.relative_to(pkg_base)), str(file), 'DATA'))
     return data_toc
 
@@ -54,8 +52,6 @@ from pathlib import Path as _Path
 
 hiddenimports = [
     'passlib.handlers.bcrypt',
-    'app.modules',
-    'app.plugins',
     # SQLAlchemy 异步方言（动态导入，PyInstaller 无法自动扫描）
     'aiosqlite',
     'sqlalchemy.dialects.sqlite',
@@ -87,29 +83,40 @@ hiddenimports = [
     'multipart',
     'email.mime.text',
     'email.mime.multipart',
-] + collect_local_submodules('app.modules') + collect_local_submodules('app.plugins')
+] + collect_local_submodules('app') \
+  + collect_local_submodules('app.modules') \
+  + collect_local_submodules('app.plugins') \
+  + collect_local_submodules('app.workflow') \
+  + collect_local_submodules('app.chain') \
+  + collect_local_submodules('app.core') \
+  + collect_local_submodules('app.helper') \
+  + collect_local_submodules('app.api') \
+  + collect_local_submodules('app.startup') \
+  + collect_local_submodules('app.utils') \
+  + collect_local_submodules('app.db') \
+  + collect_local_submodules('app.schemas')
 
 block_cipher = None
 
-# 收集 app/helper/ 下的 .pyd 文件作为 binaries（格式: src, dest_dir）
+# binaries: .pyd 文件（格式: src, dest_dir）
 helper_pyds = []
 for pyd in _glob.glob('app/helper/*.pyd'):
     helper_pyds.append((pyd, 'app/helper'))
 
-# .bin 文件作为 DATA，使用 TOC 格式: (dest_name, src_path, typecode)
-helper_bin_toc = []
+# datas: .bin 文件 + app.ico + 各包数据
+helper_bin_datas = []
 for bin_file in _glob.glob('app/helper/*.bin'):
     dest = str(_Path('app/helper') / _Path(bin_file).name)
-    helper_bin_toc.append((dest, bin_file, 'DATA'))
-
-# app.ico 以 TOC 格式加入
-extra_datas = [('app.ico', 'app.ico', 'DATA')] + helper_bin_toc
+    helper_bin_datas.append((bin_file, 'app/helper'))
 
 a = Analysis(
     ['app/main.py'],
     pathex=[],
     binaries=helper_pyds,
-    datas=[],
+    datas=[
+        ('app.ico', '.'),
+        *helper_bin_datas,
+    ],
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
@@ -118,36 +125,43 @@ a = Analysis(
     noarchive=False,
 )
 
+# 收集各包数据到 Analysis.datas
+a.datas += collect_pkg_data('cf_clearance')
+a.datas += collect_pkg_data('zhconv')
+a.datas += collect_pkg_data('cn2an')
+a.datas += collect_pkg_data('Pinyin2Hanzi')
+a.datas += collect_pkg_data('database', include_py_files=True)
+a.datas += collect_pkg_data('app.helper')
+
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+# Splash 屏：解压时显示，Python 启动后可通过 pyi_splash 更新文字
+splash = Splash(
+    'splash.png',
+    binaries=a.binaries,
+    datas=a.datas,
+    text_pos=(10, 390),
+    text_size=14,
+    text_color='white',
+    text_default='正在启动 MoviePilot...',
+    minify_script=True,
+)
 
 exe = EXE(
     pyz,
     a.scripts,
-    [],
-    exclude_binaries=True,   # onedir 模式
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    splash,
+    splash.binaries,
     name='MoviePilot',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
+    upx_exclude=[],
     console=False,
     icon='app.ico',
-)
-
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    collect_pkg_data('cf_clearance'),
-    collect_pkg_data('zhconv'),
-    collect_pkg_data('cn2an'),
-    collect_pkg_data('Pinyin2Hanzi'),
-    collect_pkg_data('database', include_py_files=True),
-    collect_pkg_data('app.helper'),   # .pyd/.so/.bin 已排除，分别由 binaries/extra_datas 处理
-    extra_datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name='MoviePilot',
+    # onefile: 不使用 exclude_binaries，不使用 COLLECT
 )
