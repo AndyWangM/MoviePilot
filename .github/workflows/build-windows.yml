@@ -143,6 +143,9 @@ jobs:
 
       - name: Build with PyInstaller (onefile)
         shell: bash
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
         run: |
           pyinstaller frozen_windows.spec --distpath dist_win --workpath build_win
 

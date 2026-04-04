@@ -143,7 +143,7 @@ splash = Splash(
     text_pos=(10, 390),
     text_size=14,
     text_color='white',
-    text_default='正在启动 MoviePilot...',
+    text_default='Starting MoviePilot...',
     minify_script=True,
 )
 
