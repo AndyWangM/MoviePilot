@@ -27,6 +27,7 @@ def collect_pkg_data(package: str, include_py_files: bool = False, subdir: str =
             # 跳过 .pyd（由 binaries 处理）和 .so/.bin（非 Windows PE）
             if extension in ('.pyd', '.so', '.bin'):
                 continue
+            # TOC 格式: (dest_name, src_path, typecode)
             data_toc.append((str(file.relative_to(pkg_base)), str(file), 'DATA'))
     return data_toc
 
@@ -49,24 +50,36 @@ def collect_local_submodules(package: str):
 
 
 import glob as _glob
+from pathlib import Path as _Path
 
 hiddenimports = [
     'passlib.handlers.bcrypt',
     'app.modules',
     'app.plugins',
+    # SQLAlchemy 异步方言（动态导入，PyInstaller 无法自动扫描）
+    'aiosqlite',
+    'sqlalchemy.dialects.sqlite',
+    'sqlalchemy.dialects.sqlite.aiosqlite',
+    'asyncpg',
+    'sqlalchemy.dialects.postgresql',
+    'sqlalchemy.dialects.postgresql.asyncpg',
 ] + collect_local_submodules('app.modules') + collect_local_submodules('app.plugins')
 
 block_cipher = None
 
-# 收集 app/helper/ 下的 .pyd 文件作为 binaries
+# 收集 app/helper/ 下的 .pyd 文件作为 binaries（格式: src, dest_dir）
 helper_pyds = []
 for pyd in _glob.glob('app/helper/*.pyd'):
     helper_pyds.append((pyd, 'app/helper'))
 
-# .bin 文件作为 DATA（不能放入 binaries，不是 PE 格式）
-helper_bins = []
+# .bin 文件作为 DATA，使用 TOC 格式: (dest_name, src_path, typecode)
+helper_bin_toc = []
 for bin_file in _glob.glob('app/helper/*.bin'):
-    helper_bins.append((bin_file, 'app/helper'))
+    dest = str(_Path('app/helper') / _Path(bin_file).name)
+    helper_bin_toc.append((dest, bin_file, 'DATA'))
+
+# app.ico 以 TOC 格式加入
+extra_datas = [('app.ico', 'app.ico', 'DATA')] + helper_bin_toc
 
 a = Analysis(
     ['app/main.py'],
@@ -102,15 +115,13 @@ coll = COLLECT(
     a.binaries,
     a.zipfiles,
     a.datas,
-    collect_pkg_data('config'),
-    collect_pkg_data('nginx'),
     collect_pkg_data('cf_clearance'),
     collect_pkg_data('zhconv'),
     collect_pkg_data('cn2an'),
     collect_pkg_data('Pinyin2Hanzi'),
     collect_pkg_data('database', include_py_files=True),
-    collect_pkg_data('app.helper'),   # .pyd/.so/.bin 已排除，分别由 binaries/DATA 处理
-    [('./app.ico', '.', 'DATA')] + helper_bins,
+    collect_pkg_data('app.helper'),   # .pyd/.so/.bin 已排除，分别由 binaries/extra_datas 处理
+    extra_datas,
     strip=False,
     upx=True,
     upx_exclude=[],
