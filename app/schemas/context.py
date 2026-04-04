@@ -185,7 +185,7 @@ class TorrentInfo(BaseModel):
     搜索种子信息
     """
     # 站点ID
-    site: Optional[int] = None
+    site: Optional[Union[int, str]] = None
     # 站点名称
     site_name: Optional[str] = None
     # 站点Cookie

@@ -247,24 +247,49 @@ def test_site(site_id: int,
 
 
 @router.get("/icon/{site_id}", summary="站点图标", response_model=schemas.Response)
-async def site_icon(site_id: int,
+async def site_icon(site_id: str,
                     db: AsyncSession = Depends(get_async_db),
                     _: schemas.TokenPayload = Depends(verify_token)) -> Any:
     """
     获取站点图标：base64或者url
+    site_id 可以是整型数据库 ID（私有站）或字符串 indexer id（公开站）
     """
-    site = await Site.async_get(db, site_id)
-    if not site:
-        raise HTTPException(
-            status_code=404,
-            detail=f"站点 {site_id} 不存在",
-        )
-    icon = await SiteIcon.async_get_by_domain(db, site.domain)
-    if not icon:
-        return schemas.Response(success=False, message="站点图标不存在！")
-    return schemas.Response(success=True, data={
-        "icon": icon.base64 if icon.base64 else icon.url
-    })
+    domain: Optional[str] = None
+    site_url: Optional[str] = None
+
+    # 尝试按整型数据库 ID 查（私有站）
+    try:
+        numeric_id = int(site_id)
+        site = await Site.async_get(db, numeric_id)
+        if site:
+            domain = site.domain
+            site_url = f"https://{domain}"
+    except (ValueError, TypeError):
+        pass
+
+    # 没找到则按 indexer id 查（公开站）
+    if not domain:
+        indexers = SitesHelper().get_indexers()
+        matched = next((s for s in indexers if s.get("id") == site_id), None)
+        if matched:
+            site_url = matched.get("domain", "").rstrip("/")
+            domain = StringUtils.get_url_domain(site_url)
+
+    if not domain:
+        raise HTTPException(status_code=404, detail=f"站点 {site_id} 不存在")
+
+    # 查 siteicon 表
+    icon = await SiteIcon.async_get_by_domain(db, domain)
+    if icon:
+        return schemas.Response(success=True, data={
+            "icon": icon.base64 if icon.base64 else icon.url
+        })
+
+    # siteicon 表没有则直接返回 favicon URL，前端自行加载
+    if site_url:
+        return schemas.Response(success=True, data={"icon": f"{site_url}/favicon.ico"})
+
+    return schemas.Response(success=False, message="站点图标不存在！")
 
 
 @router.get("/category/{site_id}", summary="站点分类", response_model=List[schemas.SiteCategory])

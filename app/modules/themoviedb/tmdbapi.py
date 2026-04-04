@@ -44,7 +44,7 @@ class TmdbApi:
         if not title:
             return []
         ret_infos = []
-        multis = self.search.multi(term=title) or []
+        multis = self.search.multi(term=title, adult=True) or []
         for multi in multis:
             if multi.get("media_type") in ["movie", "tv"]:
                 multi['media_type'] = MediaType.MOVIE if multi.get("media_type") == "movie" else MediaType.TV
@@ -59,9 +59,9 @@ class TmdbApi:
             return []
         ret_infos = []
         if year:
-            movies = self.search.movies(term=title, year=year) or []
+            movies = self.search.movies(term=title, year=year, adult=True) or []
         else:
-            movies = self.search.movies(term=title) or []
+            movies = self.search.movies(term=title, adult=True) or []
         for movie in movies:
             if title in movie.get("title"):
                 movie['media_type'] = MediaType.MOVIE
@@ -76,9 +76,9 @@ class TmdbApi:
             return []
         ret_infos = []
         if year:
-            tvs = self.search.tv_shows(term=title, release_year=year) or []
+            tvs = self.search.tv_shows(term=title, release_year=year, adult=True) or []
         else:
-            tvs = self.search.tv_shows(term=title) or []
+            tvs = self.search.tv_shows(term=title, adult=True) or []
         for tv in tvs:
             if title in tv.get("name"):
                 tv['media_type'] = MediaType.TV
@@ -91,7 +91,7 @@ class TmdbApi:
         """
         if not name:
             return []
-        return self.search.people(term=name) or []
+        return self.search.people(term=name, adult=True) or []
 
     def search_collections(self, name: str) -> List[dict]:
         """
@@ -498,9 +498,9 @@ class TmdbApi:
         """
         try:
             if year:
-                movies = self.search.movies(term=name, year=year)
+                movies = self.search.movies(term=name, year=year, adult=True)
             else:
-                movies = self.search.movies(term=name)
+                movies = self.search.movies(term=name, adult=True)
         except TMDbException as err:
             logger.error(f"连接TMDB出错：{str(err)}")
             return None
@@ -545,9 +545,9 @@ class TmdbApi:
         """
         try:
             if year:
-                tvs = self.search.tv_shows(term=name, release_year=year)
+                tvs = self.search.tv_shows(term=name, release_year=year, adult=True)
             else:
-                tvs = self.search.tv_shows(term=name)
+                tvs = self.search.tv_shows(term=name, adult=True)
         except TMDbException as err:
             logger.error(f"连接TMDB出错：{str(err)}")
             return None
@@ -623,7 +623,7 @@ class TmdbApi:
             return False
 
         try:
-            tvs = self.search.tv_shows(term=name)
+            tvs = self.search.tv_shows(term=name, adult=True)
         except TMDbException as err:
             logger.error(f"连接TMDB出错：{str(err)}")
             return None
@@ -709,7 +709,7 @@ class TmdbApi:
         :return: 匹配的媒体信息
         """
         try:
-            multis = self.search.multi(term=name) or []
+            multis = self.search.multi(term=name, adult=True) or []
         except TMDbException as err:
             logger.error(f"连接TMDB出错：{str(err)}")
             return None
@@ -1640,9 +1640,9 @@ class TmdbApi:
         """
         try:
             if year:
-                movies = await self.search.async_movies(term=name, year=year)
+                movies = await self.search.async_movies(term=name, year=year, adult=True)
             else:
-                movies = await self.search.async_movies(term=name)
+                movies = await self.search.async_movies(term=name, adult=True)
         except TMDbException as err:
             logger.error(f"连接TMDB出错：{str(err)}")
             return None
@@ -1687,9 +1687,9 @@ class TmdbApi:
         """
         try:
             if year:
-                tvs = await self.search.async_tv_shows(term=name, release_year=year)
+                tvs = await self.search.async_tv_shows(term=name, release_year=year, adult=True)
             else:
-                tvs = await self.search.async_tv_shows(term=name)
+                tvs = await self.search.async_tv_shows(term=name, adult=True)
         except TMDbException as err:
             logger.error(f"连接TMDB出错：{str(err)}")
             return None
@@ -1765,7 +1765,7 @@ class TmdbApi:
             return False
 
         try:
-            tvs = await self.search.async_tv_shows(term=name)
+            tvs = await self.search.async_tv_shows(term=name, adult=True)
         except TMDbException as err:
             logger.error(f"连接TMDB出错：{str(err)}")
             return None
@@ -1894,7 +1894,7 @@ class TmdbApi:
         if not title:
             return []
         ret_infos = []
-        multis = await self.search.async_multi(term=title) or []
+        multis = await self.search.async_multi(term=title, adult=True) or []
         for multi in multis:
             if multi.get("media_type") in ["movie", "tv"]:
                 multi['media_type'] = MediaType.MOVIE if multi.get("media_type") == "movie" else MediaType.TV
@@ -1909,9 +1909,9 @@ class TmdbApi:
             return []
         ret_infos = []
         if year:
-            movies = await self.search.async_movies(term=title, year=year) or []
+            movies = await self.search.async_movies(term=title, year=year, adult=True) or []
         else:
-            movies = await self.search.async_movies(term=title) or []
+            movies = await self.search.async_movies(term=title, adult=True) or []
         for movie in movies:
             if title in movie.get("title"):
                 movie['media_type'] = MediaType.MOVIE
@@ -1926,9 +1926,9 @@ class TmdbApi:
             return []
         ret_infos = []
         if year:
-            tvs = await self.search.async_tv_shows(term=title, release_year=year) or []
+            tvs = await self.search.async_tv_shows(term=title, release_year=year, adult=True) or []
         else:
-            tvs = await self.search.async_tv_shows(term=title) or []
+            tvs = await self.search.async_tv_shows(term=title, adult=True) or []
         for tv in tvs:
             if title in tv.get("name"):
                 tv['media_type'] = MediaType.TV
@@ -1971,7 +1971,7 @@ class TmdbApi:
         """
         if not name:
             return []
-        return await self.search.async_people(term=name) or []
+        return await self.search.async_people(term=name, adult=True) or []
 
     async def async_search_collections(self, name: str) -> List[dict]:
         """
@@ -2054,7 +2054,7 @@ class TmdbApi:
         :return: 匹配的媒体信息
         """
         try:
-            multis = await self.search.async_multi(term=name) or []
+            multis = await self.search.async_multi(term=name, adult=True) or []
         except TMDbException as err:
             logger.error(f"连接TMDB出错：{str(err)}")
             return None

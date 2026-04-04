@@ -686,21 +686,29 @@ class AsyncRequestUtils:
     async def _make_request(self, client: httpx.AsyncClient, method: str, url: str, raise_exception: bool = False,
                             **kwargs) -> Optional[httpx.Response]:
         """
-        执行实际的异步请求
+        执行实际的异步请求，网络抖动时自动重试最多 2 次（共 3 次），间隔 1s / 2s
         """
+        import asyncio as _asyncio
         kwargs.setdefault("headers", self._headers)
         # Cookie已经在AsyncClient创建时设置，不要在request时再设置，否则会被覆盖
         # kwargs.setdefault("cookies", self._cookies)
 
-        try:
-            return await client.request(method, url, **kwargs)
-        except httpx.RequestError as e:
-            # 获取更详细的错误信息
-            error_msg = str(e) if str(e) else f"未知网络错误 (URL: {url}, Method: {method.upper()})"
-            logger.debug(f"异步请求失败: {error_msg}")
-            if raise_exception:
-                raise
-            return None
+        last_error: Optional[Exception] = None
+        for attempt in range(3):
+            try:
+                return await client.request(method, url, **kwargs)
+            except httpx.RequestError as e:
+                last_error = e
+                error_msg = str(e) if str(e) else f"未知网络错误 (URL: {url}, Method: {method.upper()})"
+                if attempt < 2:
+                    logger.debug(f"异步请求失败（第{attempt + 1}次），{attempt + 1}秒后重试: {error_msg}")
+                    await _asyncio.sleep(attempt + 1)
+                else:
+                    logger.debug(f"异步请求失败: {error_msg}")
+
+        if raise_exception and last_error:
+            raise last_error
+        return None
 
     async def get(self, url: str, params: dict = None, **kwargs) -> Optional[str]:
         """
