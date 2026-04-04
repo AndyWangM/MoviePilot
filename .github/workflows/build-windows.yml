@@ -1,0 +1,138 @@
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dev
+    paths:
+      - 'version.py'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    name: Build Windows Package
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get version
+        shell: bash
+        run: |
+          app_version=$(cat version.py | sed -ne "s/APP_VERSION\s=\s'v\(.*\)'/\1/gp")
+          frontend_version=$(cat version.py | sed -ne "s/FRONTEND_VERSION\s=\s'\(.*\)'/\1/gp")
+          echo "app_version=$app_version" >> $GITHUB_ENV
+          echo "frontend_version=$frontend_version" >> $GITHUB_ENV
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          pip install --upgrade pip
+          pip install pyinstaller pystray pillow
+          pip install -r requirements.txt
+
+      - name: Install Playwright browsers
+        shell: bash
+        run: playwright install chromium firefox
+
+      - name: Download frontend dist
+        shell: bash
+        run: |
+          curl -sL "https://github.com/AndyWangM/MoviePilot-Frontend/releases/download/${{ env.frontend_version }}/dist.zip" -o dist.zip
+          unzip -q dist.zip -d frontend_tmp
+          mv frontend_tmp/dist public
+
+      - name: Download sites.pyd
+        shell: bash
+        env:
+          SITES_TOKEN: ${{ secrets.SITES_TOKEN }}
+        run: |
+          SITES_VERSION=$(curl -s "https://api.github.com/repos/AndyWangM/MoviePilot-Sites/releases/latest" \
+            -H "Authorization: Bearer $SITES_TOKEN" | python -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
+          echo "sites_version=$SITES_VERSION"
+          curl -sL "https://github.com/AndyWangM/MoviePilot-Sites/releases/download/${SITES_VERSION}/sites.cp312-win_amd64.pyd" \
+            -H "Authorization: Bearer $SITES_TOKEN" \
+            -o app/helper/sites.cp312-win_amd64.pyd
+
+      - name: Download nginx for Windows
+        shell: bash
+        run: |
+          curl -sL "https://nginx.org/download/nginx-1.26.3.zip" -o nginx.zip
+          unzip -q nginx.zip
+          mv nginx-1.26.3 nginx
+          # 放入前端 dist
+          mkdir -p nginx/html
+          cp -r public/* nginx/html/
+          # 写入 nginx.conf（反代后端 3001）
+          cat > nginx/conf/nginx.conf << 'EOF'
+          worker_processes 1;
+          events { worker_connections 1024; }
+          http {
+              include mime.types;
+              default_type application/octet-stream;
+              sendfile on;
+              server {
+                  listen 3000;
+                  root html;
+                  index index.html;
+                  location /api {
+                      proxy_pass http://127.0.0.1:3001;
+                      proxy_set_header Host $host;
+                      proxy_set_header X-Real-IP $remote_addr;
+                  }
+                  location /ws {
+                      proxy_pass http://127.0.0.1:3001;
+                      proxy_http_version 1.1;
+                      proxy_set_header Upgrade $http_upgrade;
+                      proxy_set_header Connection "upgrade";
+                  }
+                  location / {
+                      try_files $uri $uri/ /index.html;
+                  }
+              }
+          }
+          EOF
+
+      - name: Build with PyInstaller (onedir)
+        shell: bash
+        run: |
+          pyinstaller frozen.spec --distpath dist_win --workpath build_win
+
+      - name: Assemble package
+        shell: bash
+        run: |
+          PKG="MoviePilot-${{ env.app_version }}-windows"
+          mkdir -p "$PKG"
+          # 主程序
+          cp -r dist_win/MoviePilot/* "$PKG/"
+          # nginx
+          cp -r nginx "$PKG/nginx"
+          # 前端（备用直接访问）
+          cp -r public "$PKG/public"
+          # 默认配置
+          mkdir -p "$PKG/config"
+          # 打包成 zip
+          7z a "${PKG}.zip" "$PKG/"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoviePilot-${{ env.app_version }}-windows
+          path: MoviePilot-${{ env.app_version }}-windows.zip
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/heads/dev')
+        with:
+          tag_name: v${{ env.app_version }}-dev
+          name: v${{ env.app_version }}-dev
+          files: MoviePilot-${{ env.app_version }}-windows.zip
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
