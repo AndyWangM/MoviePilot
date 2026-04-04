@@ -1,0 +1,113 @@
+# -*- mode: python ; coding: utf-8 -*-
+# Windows onedir 专用 spec
+
+def collect_pkg_data(package: str, include_py_files: bool = False, subdir: str = None):
+    from pathlib import Path
+    from PyInstaller.utils.hooks import get_package_paths, PY_IGNORE_EXTENSIONS
+    from PyInstaller.building.datastruct import TOC
+
+    data_toc = TOC()
+    if type(package) is not str:
+        raise ValueError
+    try:
+        pkg_base, pkg_dir = get_package_paths(package)
+    except ValueError:
+        return data_toc
+    if subdir:
+        pkg_path = Path(pkg_dir) / subdir
+    else:
+        pkg_path = Path(pkg_dir)
+    if not pkg_path.exists():
+        return data_toc
+    for file in pkg_path.rglob('*'):
+        if file.is_file():
+            extension = file.suffix
+            if not include_py_files and (extension in PY_IGNORE_EXTENSIONS):
+                continue
+            # 跳过 .pyd，由 binaries 处理
+            if extension == '.pyd':
+                continue
+            data_toc.append((str(file.relative_to(pkg_base)), str(file), 'DATA'))
+    return data_toc
+
+
+def collect_local_submodules(package: str):
+    import os
+    from pathlib import Path
+    package_dir = Path(package.replace('.', os.sep))
+    submodules = [package]
+    if not package_dir.exists():
+        return []
+    for file in package_dir.rglob('*.py'):
+        if file.name == '__init__.py':
+            module = f"{file.parent}".replace(os.sep, '.')
+        else:
+            module = f"{file.parent}.{file.stem}".replace(os.sep, '.')
+        if module not in submodules:
+            submodules.append(module)
+    return submodules
+
+
+import glob as _glob
+
+hiddenimports = [
+    'passlib.handlers.bcrypt',
+    'app.modules',
+    'app.plugins',
+] + collect_local_submodules('app.modules') + collect_local_submodules('app.plugins')
+
+block_cipher = None
+
+# 收集 app/helper/ 下的 .pyd 文件作为 binaries
+helper_pyds = []
+for pyd in _glob.glob('app/helper/*.pyd'):
+    helper_pyds.append((pyd, 'app/helper'))
+
+a = Analysis(
+    ['app/main.py'],
+    pathex=[],
+    binaries=helper_pyds,
+    datas=[],
+    hiddenimports=hiddenimports,
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,   # onedir 模式
+    name='MoviePilot',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    console=False,
+    icon='app.ico',
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    collect_pkg_data('config'),
+    collect_pkg_data('nginx'),
+    collect_pkg_data('cf_clearance'),
+    collect_pkg_data('zhconv'),
+    collect_pkg_data('cn2an'),
+    collect_pkg_data('Pinyin2Hanzi'),
+    collect_pkg_data('database', include_py_files=True),
+    collect_pkg_data('app.helper'),   # .pyd 已从这里排除，由 binaries 处理
+    [('./app.ico', '.', 'DATA')],
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='MoviePilot',
+)

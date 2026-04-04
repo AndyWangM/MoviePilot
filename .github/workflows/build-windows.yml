@@ -102,7 +102,7 @@ jobs:
       - name: Build with PyInstaller (onedir)
         shell: bash
         run: |
-          pyinstaller frozen.spec --distpath dist_win --workpath build_win
+          pyinstaller frozen_windows.spec --distpath dist_win --workpath build_win
 
       - name: Assemble package
         shell: bash
