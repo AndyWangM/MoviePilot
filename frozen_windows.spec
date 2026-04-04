@@ -56,6 +56,13 @@ hiddenimports = [
     'passlib.handlers.bcrypt',
     'app.modules',
     'app.plugins',
+    # SQLAlchemy 异步方言（动态导入，PyInstaller 无法自动扫描）
+    'aiosqlite',
+    'sqlalchemy.dialects.sqlite',
+    'sqlalchemy.dialects.sqlite.aiosqlite',
+    'asyncpg',
+    'sqlalchemy.dialects.postgresql',
+    'sqlalchemy.dialects.postgresql.asyncpg',
 ] + collect_local_submodules('app.modules') + collect_local_submodules('app.plugins')
 
 block_cipher = None
