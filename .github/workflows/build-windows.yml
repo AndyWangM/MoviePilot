@@ -43,20 +43,35 @@ jobs:
         run: playwright install chromium firefox
 
       - name: Download frontend dist
-        shell: bash
+        shell: pwsh
         run: |
-          curl -sL "https://github.com/AndyWangM/MoviePilot-Frontend/releases/download/${{ env.frontend_version }}/dist.zip" -o dist.zip
-          unzip -q dist.zip -d frontend_tmp
-          mv frontend_tmp/dist public
+          $url = "https://github.com/AndyWangM/MoviePilot-Frontend/releases/download/${{ env.frontend_version }}/dist.zip"
+          Invoke-WebRequest -Uri $url -OutFile dist.zip -UseBasicParsing
+          Expand-Archive -Path dist.zip -DestinationPath frontend_tmp -Force
+          Move-Item frontend_tmp/dist public
 
       - name: Download resources (sites.bin etc.)
-        shell: bash
+        shell: pwsh
         run: |
-          curl -sL "https://github.com/jxxghp/MoviePilot-Resources/archive/refs/heads/main.zip" -o resources.zip
-          unzip -q resources.zip
-          cp -f MoviePilot-Resources-main/resources.v2/* app/helper/
-          echo "resources 文件:"
-          ls -lh app/helper/*.bin 2>/dev/null || echo "无 .bin 文件"
+          # PowerShell 下载，带重试，避免 curl 在 Windows CI 上拿到 HTML 错误页
+          $url = "https://github.com/jxxghp/MoviePilot-Resources/archive/refs/heads/main.zip"
+          $out = "resources.zip"
+          for ($i = 1; $i -le 3; $i++) {
+            try {
+              Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing
+              $size = (Get-Item $out).Length
+              Write-Host "Downloaded resources.zip: $size bytes (attempt $i)"
+              if ($size -gt 10000) { break }
+              Write-Host "File too small, retrying..."
+            } catch {
+              Write-Host "Attempt $i failed: $_"
+              if ($i -eq 3) { exit 1 }
+            }
+          }
+          Expand-Archive -Path resources.zip -DestinationPath . -Force
+          Copy-Item -Force MoviePilot-Resources-main/resources.v2/* app/helper/
+          Write-Host "resources 文件:"
+          Get-ChildItem app/helper/*.bin -ErrorAction SilentlyContinue | ForEach-Object { "$($_.Name) $($_.Length) bytes" }
 
       - name: Download sites.pyd
         shell: bash
