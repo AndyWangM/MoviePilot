@@ -143,9 +143,38 @@ class SMB(StorageBase, metaclass=WeakSingleton):
         """
         return not self._username and not self._password
 
+    def _reconnect(self) -> bool:
+        """
+        重置连接缓存并重新注册 SMB 会话
+        """
+        try:
+            logger.info("【SMB】尝试重新连接...")
+            reset_connection_cache(self._host)
+            conf = self.get_conf()
+            if not conf:
+                return False
+            port = conf.get("port", 445)
+            register_session(
+                self._host,
+                username=self._username,
+                password=self._password,
+                port=port,
+                encrypt=False,
+                connection_timeout=60,
+            )
+            self._connected = True
+            logger.info("【SMB】重新连接成功")
+            return True
+        except Exception as e:
+            logger.error(f"【SMB】重新连接失败: {e}")
+            self._connected = False
+            return False
+
     def _smb_call_with_retry(self, func, *args, retries: int = 3, base_delay: float = 0.5, **kwargs):
         """
-        对 SMB 调用进行 credit 不足时的退避重试
+        对 SMB 调用进行退避重试：
+        - credit 不足：等待后重试
+        - socket 断开：重连后重试
         :param func: 要调用的 SMB 函数
         :param retries: 最大重试次数
         :param base_delay: 初始等待秒数（每次翻倍）
@@ -156,10 +185,23 @@ class SMB(StorageBase, metaclass=WeakSingleton):
                 return func(*args, **kwargs)
             except SMBResponseException as e:
                 last_exc = e
-                if "credits" in str(e).lower() and attempt < retries - 1:
+                err_msg = str(e).lower()
+                if "credits" in err_msg and attempt < retries - 1:
                     wait = base_delay * (2 ** attempt)
                     logger.warning(f"【SMB】credit 不足，{wait:.1f}s 后重试 ({attempt + 1}/{retries}): {e}")
                     time.sleep(wait)
+                    continue
+                raise
+            except Exception as e:
+                last_exc = e
+                err_msg = str(e).lower()
+                # socket 关闭 / 连接中断，尝试重连
+                if any(kw in err_msg for kw in ("socket was closed", "connection reset", "broken pipe",
+                                                 "connection aborted", "eof")) and attempt < retries - 1:
+                    wait = base_delay * (2 ** attempt)
+                    logger.warning(f"【SMB】连接中断，{wait:.1f}s 后重连重试 ({attempt + 1}/{retries}): {e}")
+                    time.sleep(wait)
+                    self._reconnect()
                     continue
                 raise
         raise last_exc
@@ -627,23 +669,36 @@ class SMB(StorageBase, metaclass=WeakSingleton):
             logger.info(f"【SMB】开始上传: {path} -> {target_path}")
             progress_callback = transfer_process(path.as_posix())
 
-            # 使用更高效的文件传输方式
-            with open(path, "rb") as src_file:
-                with self._smb_call_with_retry(smbclient.open_file, smb_path, mode="wb") as dst_file:
-                    uploaded_size = 0
-                    while True:
-                        if global_vars.is_transfer_stopped(path.as_posix()):
-                            logger.info(f"【SMB】{path} 上传已取消！")
-                            return None
-                        chunk = src_file.read(self.chunk_size)
-                        if not chunk:
-                            break
-                        dst_file.write(chunk)
-                        uploaded_size += len(chunk)
-                        # 更新进度
-                        if file_size:
-                            progress = (uploaded_size * 100) / file_size
-                            progress_callback(progress)
+            # 上传（断线时重连重试，最多 3 次）
+            for _attempt in range(3):
+                try:
+                    with open(path, "rb") as src_file:
+                        with self._smb_call_with_retry(smbclient.open_file, smb_path, mode="wb") as dst_file:
+                            uploaded_size = 0
+                            while True:
+                                if global_vars.is_transfer_stopped(path.as_posix()):
+                                    logger.info(f"【SMB】{path} 上传已取消！")
+                                    return None
+                                chunk = src_file.read(self.chunk_size)
+                                if not chunk:
+                                    break
+                                dst_file.write(chunk)
+                                uploaded_size += len(chunk)
+                                if file_size:
+                                    progress_callback((uploaded_size * 100) / file_size)
+                    break  # 上传成功，退出重试循环
+                except Exception as e:
+                    err_msg = str(e).lower()
+                    if any(kw in err_msg for kw in ("socket was closed", "connection reset",
+                                                     "broken pipe", "connection aborted", "eof")):
+                        if _attempt < 2:
+                            wait = 1.0 * (2 ** _attempt)
+                            logger.warning(f"【SMB】上传中断，{wait:.0f}s 后重连重试 ({_attempt + 1}/3): {e}")
+                            time.sleep(wait)
+                            self._reconnect()
+                            continue
+                    logger.error(f"【SMB】上传失败: {target_name} - {e}")
+                    return None
 
             # 完成上传
             progress_callback(100)
