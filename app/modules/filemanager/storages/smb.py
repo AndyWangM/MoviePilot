@@ -48,6 +48,9 @@ class SMB(StorageBase, metaclass=WeakSingleton):
     # 文件块大小，默认10MB
     chunk_size = 10 * 1024 * 1024
 
+    # SMB/Samba 不保证父目录 mtime 随子文件新增而更新，禁用增量快照跳过逻辑
+    snapshot_check_folder_modtime = False
+
     def __init__(self):
         super().__init__()
         self._connected = False
@@ -139,6 +142,27 @@ class SMB(StorageBase, metaclass=WeakSingleton):
         检查是否为匿名访问
         """
         return not self._username and not self._password
+
+    def _smb_call_with_retry(self, func, *args, retries: int = 3, base_delay: float = 0.5, **kwargs):
+        """
+        对 SMB 调用进行 credit 不足时的退避重试
+        :param func: 要调用的 SMB 函数
+        :param retries: 最大重试次数
+        :param base_delay: 初始等待秒数（每次翻倍）
+        """
+        last_exc = None
+        for attempt in range(retries):
+            try:
+                return func(*args, **kwargs)
+            except SMBResponseException as e:
+                last_exc = e
+                if "credits" in str(e).lower() and attempt < retries - 1:
+                    wait = base_delay * (2 ** attempt)
+                    logger.warning(f"【SMB】credit 不足，{wait:.1f}s 后重试 ({attempt + 1}/{retries}): {e}")
+                    time.sleep(wait)
+                    continue
+                raise
+        raise last_exc
 
     def _check_connection(self):
         """
@@ -262,9 +286,10 @@ class SMB(StorageBase, metaclass=WeakSingleton):
             # 构建SMB路径
             smb_path = self._normalize_path(fileitem.path.rstrip("/"))
 
-            # 列出目录内容
+            # 列出目录内容 — 优先用 scandir（一次往返获取全部 stat），credit 不足时退避重试
+            items = []
             try:
-                entries = smbclient.listdir(smb_path)
+                scan_entries = list(self._smb_call_with_retry(smbclient.scandir, smb_path))
             except SMBResponseException as e:
                 logger.error(f"【SMB】列出目录失败: {smb_path} - {e}")
                 return []
@@ -272,18 +297,44 @@ class SMB(StorageBase, metaclass=WeakSingleton):
                 logger.error(f"【SMB】列出目录失败: {smb_path} - {e}")
                 return []
 
-            items = []
-            for entry in entries:
-                if entry in [".", ".."]:
+            for dir_entry in scan_entries:
+                if dir_entry.name in [".", ".."]:
                     continue
-
-                entry_path = f"{smb_path}\\{entry}"
                 try:
-                    stat_result = smbclient.stat(entry_path)
-                    item = self._create_fileitem(stat_result, entry_path, entry)
-                    items.append(item)
+                    stat_result = dir_entry.stat()
+                    is_dir = dir_entry.is_dir()
+                    entry_path = f"{smb_path}\\{dir_entry.name}"
+                    relative_path = entry_path.replace(self._server_path, "").replace("\\", "/")
+                    if not relative_path.startswith("/"):
+                        relative_path = "/" + relative_path
+                    if is_dir and not relative_path.endswith("/"):
+                        relative_path += "/"
+                    try:
+                        modify_time = int(stat_result.st_mtime)
+                    except (AttributeError, TypeError):
+                        modify_time = int(time.time())
+                    if is_dir:
+                        items.append(schemas.FileItem(
+                            storage=self.schema.value,
+                            type="dir",
+                            path=relative_path,
+                            name=dir_entry.name,
+                            basename=dir_entry.name,
+                            modify_time=modify_time,
+                        ))
+                    else:
+                        items.append(schemas.FileItem(
+                            storage=self.schema.value,
+                            type="file",
+                            path=relative_path,
+                            name=dir_entry.name,
+                            basename=Path(dir_entry.name).stem,
+                            extension=Path(dir_entry.name).suffix[1:] if Path(dir_entry.name).suffix else None,
+                            size=getattr(stat_result, "st_size", 0),
+                            modify_time=modify_time,
+                        ))
                 except Exception as e:
-                    logger.debug(f"【SMB】获取文件信息失败: {entry_path} - {e}")
+                    logger.debug(f"【SMB】获取文件信息失败: {dir_entry.name} - {e}")
                     continue
 
             return items
@@ -526,8 +577,8 @@ class SMB(StorageBase, metaclass=WeakSingleton):
             logger.info(f"【SMB】开始下载: {fileitem.name} -> {local_path}")
             progress_callback = transfer_process(Path(fileitem.path).as_posix())
 
-            # 使用更高效的文件传输方式
-            with smbclient.open_file(smb_path, mode="rb") as src_file:
+            # 使用更高效的文件传输方式（SMB credit 不足时重试）
+            with self._smb_call_with_retry(smbclient.open_file, smb_path, mode="rb") as src_file:
                 with open(local_path, "wb") as dst_file:
                     downloaded_size = 0
                     while True:
@@ -578,7 +629,7 @@ class SMB(StorageBase, metaclass=WeakSingleton):
 
             # 使用更高效的文件传输方式
             with open(path, "rb") as src_file:
-                with smbclient.open_file(smb_path, mode="wb") as dst_file:
+                with self._smb_call_with_retry(smbclient.open_file, smb_path, mode="wb") as dst_file:
                     uploaded_size = 0
                     while True:
                         if global_vars.is_transfer_stopped(path.as_posix()):

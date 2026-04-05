@@ -1,8 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.startup.lifecycle import lifespan
+from app.utils.system import SystemUtils
 
 
 def create_app() -> FastAPI:
@@ -25,6 +27,22 @@ def create_app() -> FastAPI:
     )
 
     return _app
+
+
+def mount_frontend(app: FastAPI):
+    """
+    frozen（EXE）模式下托管前端静态文件。
+    必须在 API 路由注册完成之后调用，否则 StaticFiles("/") 会拦截所有请求。
+    """
+    if SystemUtils.is_frozen() and SystemUtils.is_windows():
+        import sys
+        import pathlib
+        if hasattr(sys, '_MEIPASS'):
+            frontend_path = pathlib.Path(sys._MEIPASS) / "public"
+        else:
+            frontend_path = pathlib.Path(sys.executable).parent / "public"
+        if frontend_path.exists():
+            app.mount("/", StaticFiles(directory=str(frontend_path), html=True), name="frontend")
 
 
 # 创建 FastAPI 应用实例

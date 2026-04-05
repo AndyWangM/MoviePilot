@@ -134,13 +134,13 @@ class TMDb(object):
             raise TMDbException("TheMovieDb API Key 未设置！")
 
     def _build_url(self, action, params=""):
-        return "https://%s/3%s?api_key=%s&%s&language=%s" % (
+        base = "https://%s/3%s?api_key=%s&language=%s" % (
             self.domain,
             action,
             self.api_key,
-            params,
             self.language,
         )
+        return "%s&%s" % (base, params) if params else base
 
     def _handle_headers(self, headers):
         if "X-RateLimit-Remaining" in headers:

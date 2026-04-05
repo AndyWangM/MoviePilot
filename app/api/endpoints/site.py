@@ -55,18 +55,28 @@ async def add_site(
         return schemas.Response(success=False, message="用户未通过认证，无法使用站点功能！")
     domain = StringUtils.get_url_domain(site_in.url)
     site_info = await SitesHelper().async_get_indexer(domain)
-    if not site_info:
-        return schemas.Response(success=False, message="该站点不支持，请检查站点域名是否正确")
     if await Site.async_get_by_domain(db, domain):
         return schemas.Response(success=False, message=f"{domain} 站点己存在")
-    # 保存站点信息
-    site_in.domain = domain
     # 校正地址格式
     _scheme, _netloc = StringUtils.get_url_netloc(site_in.url)
     site_in.url = f"{_scheme}://{_netloc}/"
-    site_in.name = site_info.get("name")
+    site_in.domain = domain
     site_in.id = None
-    site_in.public = 1 if site_info.get("public") else 0
+    if site_info:
+        # 已知站点：用索引器信息补全
+        site_in.name = site_info.get("name") or site_in.name or domain
+        site_in.public = 1 if site_info.get("public") else 0
+    else:
+        # 未知站点：作为自定义私有站点添加，名称用用户填写的或域名
+        site_in.name = site_in.name or domain
+        site_in.public = 0
+        # 动态注册到索引器，使站点可被搜索模块识别
+        SitesHelper().add_indexer({
+            "id": domain,
+            "name": site_in.name,
+            "domain": site_in.url,
+            "public": False,
+        })
     site = Site(**site_in.model_dump())
     site.create(db)
     # 通知站点更新
@@ -247,24 +257,49 @@ def test_site(site_id: int,
 
 
 @router.get("/icon/{site_id}", summary="站点图标", response_model=schemas.Response)
-async def site_icon(site_id: int,
+async def site_icon(site_id: str,
                     db: AsyncSession = Depends(get_async_db),
                     _: schemas.TokenPayload = Depends(verify_token)) -> Any:
     """
     获取站点图标：base64或者url
+    site_id 可以是整型数据库 ID（私有站）或字符串 indexer id（公开站）
     """
-    site = await Site.async_get(db, site_id)
-    if not site:
-        raise HTTPException(
-            status_code=404,
-            detail=f"站点 {site_id} 不存在",
-        )
-    icon = await SiteIcon.async_get_by_domain(db, site.domain)
-    if not icon:
-        return schemas.Response(success=False, message="站点图标不存在！")
-    return schemas.Response(success=True, data={
-        "icon": icon.base64 if icon.base64 else icon.url
-    })
+    domain: Optional[str] = None
+    site_url: Optional[str] = None
+
+    # 尝试按整型数据库 ID 查（私有站）
+    try:
+        numeric_id = int(site_id)
+        site = await Site.async_get(db, numeric_id)
+        if site:
+            domain = site.domain
+            site_url = f"https://{domain}"
+    except (ValueError, TypeError):
+        pass
+
+    # 没找到则按 indexer id 查（公开站）
+    if not domain:
+        indexers = SitesHelper().get_indexers()
+        matched = next((s for s in indexers if s.get("id") == site_id), None)
+        if matched:
+            site_url = matched.get("domain", "").rstrip("/")
+            domain = StringUtils.get_url_domain(site_url)
+
+    if not domain:
+        raise HTTPException(status_code=404, detail=f"站点 {site_id} 不存在")
+
+    # 查 siteicon 表
+    icon = await SiteIcon.async_get_by_domain(db, domain)
+    if icon:
+        return schemas.Response(success=True, data={
+            "icon": icon.base64 if icon.base64 else icon.url
+        })
+
+    # siteicon 表没有则直接返回 favicon URL，前端自行加载
+    if site_url:
+        return schemas.Response(success=True, data={"icon": f"{site_url}/favicon.ico"})
+
+    return schemas.Response(success=False, message="站点图标不存在！")
 
 
 @router.get("/category/{site_id}", summary="站点分类", response_model=List[schemas.SiteCategory])

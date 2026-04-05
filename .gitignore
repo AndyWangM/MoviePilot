@@ -1,16 +1,15 @@
 .idea/
 *.c
-*.so
-*.pyd
 build/
 cython_cache/
 dist/
 nginx/
 test.py
 safety_report.txt
-app/helper/sites.py
-app/helper/*.so
-app/helper/*.pyd
+app/helper/_sites_so.cpython-*.so
+app/helper/_sites_so.cp*-*.pyd
+app/helper/sites.cpython-*.so
+app/helper/sites.cp*-*.pyd
 app/helper/*.bin
 app/plugins/**
 !app/plugins/__init__.py
@@ -24,6 +23,16 @@ config/cache/
 *.log
 .vscode
 venv
+.venv/
+
+# 本地开发配置（含密码，不提交）
+config/app.env
+
+# 开发文档（AI 助手维护，不提交到上游）
+CODEBASE.md
+
+# 启动脚本（本地用，不提交到上游）
+start.sh
 
 # Pylint
 pylint-report.json

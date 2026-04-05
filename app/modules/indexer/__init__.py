@@ -33,7 +33,6 @@ class IndexerModule(_ModuleBase):
         self._site_schemas = ModuleHelper.load(
             'app.modules.indexer.parser',
             filter_func=lambda _, obj: hasattr(obj, 'schema') and getattr(obj, 'schema') is not None)
-        pass
 
     @staticmethod
     def get_name() -> str:

@@ -322,7 +322,7 @@ class DownloaderType(Enum):
     # Rtorrent
     Rtorrent = "Rtorrent"
     # Aria2
-    # Aria2 = "Aria2"
+    Aria2 = "Aria2"
 
 
 # 媒体服务器类型

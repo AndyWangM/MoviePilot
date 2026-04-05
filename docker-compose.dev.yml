@@ -1,0 +1,79 @@
+version: "3.8"
+
+services:
+  moviepilot:
+    image: w394090975/moviepilot:dev
+    container_name: moviepilot
+    restart: unless-stopped
+    ports:
+      - "3000:3000"   # 前端 Web UI
+      - "3001:3001"   # 后端 API
+    volumes:
+      - ./config:/config            # 配置、数据库、日志（必填）
+      - /your/media:/media          # 媒体库路径（按实际修改）
+    environment:
+      # ==============================
+      # 基础
+      # ==============================
+      - TZ=Asia/Shanghai
+      - NGINX_PORT=3000             # 前端端口
+      - PORT=3001                   # 后端端口
+      # - APP_DOMAIN=               # 外网访问域名（反代时填）
+      # - SUPERUSER=admin           # 超级管理员用户名
+      # - SUPERUSER_PASSWORD=       # 初始密码（不填则随机，见日志）
+      # - API_TOKEN=                # API 访问 Token（外部调用时用）
+
+      # ==============================
+      # 认证
+      # ==============================
+      - AUTH_SITE=iyuu              # 认证站点（iyuu / ptlgs 等）
+      # - IYUU_SIGN=                # iyuu Token
+
+      # ==============================
+      # 更新控制
+      # ==============================
+      - MOVIEPILOT_AUTO_UPDATE=false  # 禁用自动更新上游版本（使用自己构建的镜像时建议关闭）
+      - AUTO_UPDATE_RESOURCE=false    # 禁用自动更新资源包
+
+      # ==============================
+      # 网络 / 代理
+      # ==============================
+      # - PROXY_HOST=http://127.0.0.1:7890    # HTTP 代理
+      # - GITHUB_PROXY=https://ghp.ci/        # GitHub 下载代理（国内加速）
+      # - GITHUB_TOKEN=                        # GitHub PAT（提高 API 限速）
+      # - DOH_ENABLE=false                     # DNS over HTTPS
+
+      # ==============================
+      # 媒体识别
+      # ==============================
+      # - TMDB_API_KEY=db55323b8d3e4154498498a75642b381
+      # - TMDB_IMAGE_DOMAIN=image.tmdb.org
+      # - TMDB_API_DOMAIN=api.themoviedb.org
+      # - SEARCH_SOURCE=themoviedb     # themoviedb / douban
+      # - RECOGNIZE_SOURCE=themoviedb
+
+      # ==============================
+      # 数据库（默认 SQLite，需要 PostgreSQL 时启用）
+      # ==============================
+      # - DB_TYPE=postgresql
+      # - DB_POSTGRESQL_HOST=postgres
+      # - DB_POSTGRESQL_PORT=5432
+      # - DB_POSTGRESQL_DATABASE=moviepilot
+      # - DB_POSTGRESQL_USERNAME=moviepilot
+      # - DB_POSTGRESQL_PASSWORD=moviepilot
+
+      # ==============================
+      # AI 智能体（可选）
+      # ==============================
+      # - AI_AGENT_ENABLE=false
+      # - LLM_PROVIDER=deepseek
+      # - LLM_MODEL=deepseek-chat
+      # - LLM_API_KEY=
+
+      # ==============================
+      # 其他
+      # ==============================
+      # - PLUGIN_MARKET=https://github.com/jxxghp/MoviePilot-Plugins   # 插件市场
+      # - COOKIECLOUD_HOST=          # CookieCloud 服务器
+      # - COOKIECLOUD_KEY=
+      # - COOKIECLOUD_PASSWORD=
