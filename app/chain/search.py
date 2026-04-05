@@ -488,7 +488,7 @@ class SearchChain(ChainBase):
             )
             search_count += 1
             # 有结果则停止
-            if torrents:
+            if not settings.SEARCH_MULTIPLE_NAME and torrents:
                 logger.info(f"共搜索到 {len(torrents)} 个资源，停止搜索")
                 break
 
