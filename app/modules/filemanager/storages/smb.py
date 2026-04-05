@@ -262,29 +262,86 @@ class SMB(StorageBase, metaclass=WeakSingleton):
             # 构建SMB路径
             smb_path = self._normalize_path(fileitem.path.rstrip("/"))
 
-            # 列出目录内容
-            try:
-                entries = smbclient.listdir(smb_path)
-            except SMBResponseException as e:
-                logger.error(f"【SMB】列出目录失败: {smb_path} - {e}")
-                return []
-            except SMBException as e:
-                logger.error(f"【SMB】列出目录失败: {smb_path} - {e}")
+            # 列出目录内容（SMB2 credit 耗尽时短暂等待重试）
+            entries = None
+            for _attempt in range(3):
+                try:
+                    entries = smbclient.listdir(smb_path)
+                    break
+                except SMBResponseException as e:
+                    err_msg = str(e)
+                    if "credits" in err_msg.lower() and _attempt < 2:
+                        logger.warning(f"【SMB】credit 不足，等待重试 ({_attempt + 1}/3): {err_msg}")
+                        time.sleep(0.5 * (_attempt + 1))
+                        continue
+                    logger.error(f"【SMB】列出目录失败: {smb_path} - {e}")
+                    return []
+                except SMBException as e:
+                    logger.error(f"【SMB】列出目录失败: {smb_path} - {e}")
+                    return []
+            if entries is None:
                 return []
 
             items = []
-            for entry in entries:
-                if entry in [".", ".."]:
-                    continue
+            # 用 scandir 替代 listdir+stat 逐个查询，一次往返拿到所有目录项的 stat
+            try:
+                scan_entries = list(smbclient.scandir(smb_path))
+            except Exception:
+                scan_entries = None
 
-                entry_path = f"{smb_path}\\{entry}"
-                try:
-                    stat_result = smbclient.stat(entry_path)
-                    item = self._create_fileitem(stat_result, entry_path, entry)
-                    items.append(item)
-                except Exception as e:
-                    logger.debug(f"【SMB】获取文件信息失败: {entry_path} - {e}")
-                    continue
+            if scan_entries is not None:
+                for dir_entry in scan_entries:
+                    if dir_entry.name in [".", ".."]:
+                        continue
+                    try:
+                        stat_result = dir_entry.stat()
+                        is_dir = dir_entry.is_dir()
+                        entry_path = f"{smb_path}\\{dir_entry.name}"
+                        relative_path = entry_path.replace(self._server_path, "").replace("\\", "/")
+                        if not relative_path.startswith("/"):
+                            relative_path = "/" + relative_path
+                        if is_dir and not relative_path.endswith("/"):
+                            relative_path += "/"
+                        try:
+                            modify_time = int(stat_result.st_mtime)
+                        except (AttributeError, TypeError):
+                            modify_time = int(time.time())
+                        if is_dir:
+                            items.append(schemas.FileItem(
+                                storage=self.schema.value,
+                                type="dir",
+                                path=relative_path,
+                                name=dir_entry.name,
+                                basename=dir_entry.name,
+                                modify_time=modify_time,
+                            ))
+                        else:
+                            items.append(schemas.FileItem(
+                                storage=self.schema.value,
+                                type="file",
+                                path=relative_path,
+                                name=dir_entry.name,
+                                basename=Path(dir_entry.name).stem,
+                                extension=Path(dir_entry.name).suffix[1:] if Path(dir_entry.name).suffix else None,
+                                size=getattr(stat_result, "st_size", 0),
+                                modify_time=modify_time,
+                            ))
+                    except Exception as e:
+                        logger.debug(f"【SMB】获取文件信息失败: {dir_entry.name} - {e}")
+                        continue
+            else:
+                # scandir 不可用时回退到旧逻辑
+                for entry in entries:
+                    if entry in [".", ".."]:
+                        continue
+                    entry_path = f"{smb_path}\\{entry}"
+                    try:
+                        stat_result = smbclient.stat(entry_path)
+                        item = self._create_fileitem(stat_result, entry_path, entry)
+                        items.append(item)
+                    except Exception as e:
+                        logger.debug(f"【SMB】获取文件信息失败: {entry_path} - {e}")
+                        continue
 
             return items
         except Exception as e:
