@@ -15,6 +15,7 @@ from app.db.models import *
 from app.db.systemconfig_oper import SystemConfigOper
 from app.log import logger
 from app.schemas.types import SystemConfigKey
+from app.utils.system import SystemUtils
 
 # revision identifiers, used by Alembic.
 revision = '294b007932ef'
@@ -33,6 +34,12 @@ def upgrade() -> None:
         if not _user:
             if settings.SUPERUSER_PASSWORD:
                 init_password = settings.SUPERUSER_PASSWORD
+            elif SystemUtils.is_frozen():
+                # EXE 模式：使用固定初始密码，方便首次登录
+                init_password = "admin"
+                logger.info(
+                    f"【超级管理员初始密码】用户名：{settings.SUPERUSER}  密码：{init_password}  "
+                    f"请登录后在「设定 → 用户」中修改密码。")
             else:
                 # 生成随机密码
                 init_password = secrets.token_urlsafe(16)

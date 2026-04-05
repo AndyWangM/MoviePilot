@@ -75,6 +75,17 @@ def start_tray():
         if log_file.exists():
             os.startfile(str(log_file))
 
+    def show_login_info():
+        import ctypes
+        msg = (
+            f"MoviePilot 登录信息\n\n"
+            f"地址：http://localhost:{settings.PORT}\n"
+            f"用户名：{settings.SUPERUSER}\n"
+            f"初始密码：admin\n\n"
+            f"（首次登录后请在「设定 → 用户」中修改密码）"
+        )
+        ctypes.windll.user32.MessageBoxW(0, msg, "MoviePilot 登录信息", 0x40)  # 0x40 = MB_ICONINFORMATION
+
     def quit_app():
         TrayIcon.stop()
         Server.should_exit = True
@@ -85,13 +96,29 @@ def start_tray():
         settings.PROJECT_NAME,
         icon=Image.open(settings.ROOT_PATH / 'app.ico'),
         menu=pystray.Menu(
-            pystray.MenuItem('打开', open_web),
+            pystray.MenuItem('打开', open_web, default=True),
+            pystray.MenuItem('登录信息', show_login_info),
             pystray.MenuItem('查看日志', open_log),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem('退出', quit_app),
         )
     )
     threading.Thread(target=TrayIcon.run, daemon=True).start()
+
+    # 弹出一次登录提示气泡（仅首次启动时显示）
+    _first_run_flag = pathlib.Path(sys.executable).parent / "config" / ".initialized"
+    if not _first_run_flag.exists():
+        def _notify():
+            import time
+            time.sleep(3)  # 等托盘图标就绪
+            try:
+                TrayIcon.notify(
+                    f"用户名：{settings.SUPERUSER}\n初始密码：admin\n右键托盘图标 → 登录信息",
+                    "MoviePilot 首次登录提示"
+                )
+            except Exception:
+                pass
+        threading.Thread(target=_notify, daemon=True).start()
 
 
 def signal_handler(signum, frame):
@@ -110,6 +137,13 @@ if __name__ == '__main__':
     init_db()
     # 更新数据库
     update_db()
+
+    # 写入首次启动标记（在 init_db 之后，确保数据库已初始化）
+    if SystemUtils.is_frozen():
+        _flag = pathlib.Path(sys.executable).parent / "config" / ".initialized"
+        _flag.parent.mkdir(parents=True, exist_ok=True)
+        if not _flag.exists():
+            _flag.touch()
 
     splash_update("正在启动服务，请稍候...")
     # splash 在 uvicorn 开始监听后关闭（通过 lifespan startup 事件）
