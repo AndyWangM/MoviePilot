@@ -596,11 +596,11 @@ class Monitor(ConfigReloadMixin, metaclass=SingletonClass):
                 for mon_path in mon_paths:
                     logger.debug(f"开始对 {storage}:{mon_path} 进行快照...")
 
-                    # 生成新快照（增量模式）
+                    # 生成新快照（SMB 远程存储不可靠增量，始终全量扫描保证比对正确）
                     snapshot = StorageChain().snapshot_storage(
                         storage=storage,
                         path=mon_path,
-                        last_snapshot_time=last_snapshot_time
+                        last_snapshot_time=0
                     )
 
                     if snapshot is None:
@@ -650,10 +650,10 @@ class Monitor(ConfigReloadMixin, metaclass=SingletonClass):
                         trigger='interval',
                         minutes=new_interval
                     )
-                    logger.info(f"{storage}:{mon_path} 监控间隔已调整为 {new_interval} 分钟")
+                    logger.info(f"{storage}:{mon_paths} 监控间隔已调整为 {new_interval} 分钟")
 
             except Exception as e:
-                logger.error(f"轮询监控 {storage}:{mon_path} 出现错误：{e}")
+                logger.error(f"轮询监控 {storage}:{mon_paths} 出现错误：{e}")
                 logger.debug(traceback.format_exc())
 
     def event_handler(self, event, text: str, event_path: str, file_size: float = None):
