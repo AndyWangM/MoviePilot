@@ -26,19 +26,23 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # frozen（EXE）模式下直接托管前端静态文件，不依赖 nginx
+    return _app
+
+
+def mount_frontend(app: FastAPI):
+    """
+    frozen（EXE）模式下托管前端静态文件。
+    必须在 API 路由注册完成之后调用，否则 StaticFiles("/") 会拦截所有请求。
+    """
     if SystemUtils.is_frozen() and SystemUtils.is_windows():
         import sys
         import pathlib
-        # onefile: 解压到 _MEIPASS 临时目录；onedir: exe 同级目录
         if hasattr(sys, '_MEIPASS'):
             frontend_path = pathlib.Path(sys._MEIPASS) / "public"
         else:
             frontend_path = pathlib.Path(sys.executable).parent / "public"
         if frontend_path.exists():
-            _app.mount("/", StaticFiles(directory=str(frontend_path), html=True), name="frontend")
-
-    return _app
+            app.mount("/", StaticFiles(directory=str(frontend_path), html=True), name="frontend")
 
 
 # 创建 FastAPI 应用实例

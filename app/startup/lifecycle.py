@@ -38,8 +38,11 @@ async def lifespan(app: FastAPI):
     print("Starting up...")
     # 存储当前循环
     global_vars.set_loop(asyncio.get_event_loop())
-    # 初始化路由
+    # 初始化路由（必须在 mount_frontend 之前）
     init_routers(app)
+    # frozen/Windows EXE 模式：挂载前端静态文件（必须在路由注册之后）
+    from app.factory import mount_frontend
+    mount_frontend(app)
     # 初始化模块
     init_modules()
     # 恢复插件备份
