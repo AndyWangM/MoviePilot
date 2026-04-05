@@ -79,11 +79,6 @@ class IndexerModule(_ModuleBase):
         """
         检查是否可以执行搜索
         """
-        # 虚拟站点（如插件注入的 prowlarr-*.local）不走系统 indexer
-        domain = site.get("domain", "")
-        if domain.endswith(".local"):
-            return False
-
         # 可能为关键字或ttxxxx
         if search_word \
                 and site.get('language') == "en" \
