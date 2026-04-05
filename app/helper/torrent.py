@@ -451,6 +451,9 @@ class TorrentHelper:
         if not filter_params:
             return True
 
+        if not torrent_info.title:
+            return False
+
         # 匹配内容
         content = (f"{torrent_info.title} "
                    f"{torrent_info.description} "
